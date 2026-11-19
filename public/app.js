@@ -79,7 +79,7 @@ function renderMenu(unread = 0) {
   let links;
   if (!u) links = [['#/', 'Inicio'], ['#/login', 'Ingresar'], ['#/registro', 'Crear cuenta']];
   else if (u.role === 'trainer') links = [['#/panel', 'Panel'], ['#/alumnos', 'Alumnos' + (unread ? `<span class="badge">${unread}</span>` : '')], ['#/rutinas', 'Rutinas'],
-    ['#/ejercicios', 'Ejercicios'], ['#/consejos', 'Consejos'], ['#/planes-admin', 'Planes y pagos'], ['#/salir', 'Salir']];
+    ['#/ejercicios', 'Ejercicios'], ['#/consejos', 'Consejos'], ['#/planes-admin', 'Planes y pagos'], ['#/recordatorios', 'Recordatorios'], ['#/perfil', 'Mi cuenta'], ['#/salir', 'Salir']];
   else if (me.subscription) links = [['#/inicio', 'Inicio'], ['#/rutina', 'Mi rutina'], ['#/progreso', 'Progreso'], ['#/ejercicios', 'Ejercicios'],
     ['#/consejos', 'Consejos'], ['#/mensajes', 'Mi coach'], ['#/perfil', 'Perfil'], ['#/salir', 'Salir']];
   else links = [['#/planes', 'Suscribirme'], ['#/perfil', 'Perfil'], ['#/salir', 'Salir']];
@@ -294,9 +294,61 @@ route(/^\/entrenar\/(\d+)$/, async (dayId) => {
   });
 }, { auth: true, paid: true });
 
-function progressView(progress, logs, editable) {
+const POSES = { frente: 'Frente', perfil: 'Perfil', espalda: 'Espalda' };
+const photoUrl = (p) => `/api/photos/${p.id}/file`;
+
+function photosView(photos, editable) {
+  const byPose = Object.keys(POSES).map((k) => [k, photos.filter((p) => p.pose === k)]).filter(([, l]) => l.length >= 2);
+  const fig = (p, label) => `<figure class="photo"><a href="${photoUrl(p)}" target="_blank" rel="noopener"><img src="${photoUrl(p)}" loading="lazy" alt="Foto ${esc(POSES[p.pose])} del ${fdate(p.date)}"></a>
+    <figcaption><span>${label ? `<b>${label}</b> · ` : ''}${fdate(p.date)}${label ? '' : ` · ${esc(POSES[p.pose])}`}</span>
+    ${editable && !label ? `<button type="button" class="sm danger" data-delphoto="${p.id}" aria-label="Borrar foto">✕</button>` : ''}</figcaption>
+    ${p.notes && !label ? `<div class="small muted">${esc(p.notes)}</div>` : ''}</figure>`;
+  return `<div class="card" style="margin-bottom:16px"><h2>Fotos de progreso</h2>
+    ${editable ? `<form id="photoform" class="fields" style="align-items:end">
+      <div class="field"><label>Foto</label><input name="file" type="file" accept="image/*" required></div>
+      <div class="field"><label>Posición</label><select name="pose">${Object.entries(POSES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field"><label>Fecha</label><input name="date" type="date" value="${today()}"></div>
+      <div class="field"><label>Nota (opcional)</label><input name="notes" maxlength="300"></div>
+      <div class="field"><button class="primary" style="width:100%">Subir foto</button></div>
+    </form><p class="muted small" style="margin-top:0">🔒 Solo vos y tu coach pueden ver tus fotos. Tip: sacalas con la misma luz, ropa y distancia para comparar mejor.</p>` : ''}
+    ${byPose.length ? `<h3>Antes y ahora</h3>${byPose.map(([k, l]) => `<div class="compare">${fig(l[0], 'Antes')}${fig(l.at(-1), 'Ahora')}<div class="compare-label">${POSES[k]}</div></div>`).join('')}` : ''}
+    ${photos.length ? `<h3>Todas las fotos</h3><div class="photos">${photos.slice().reverse().map((p) => fig(p)).join('')}</div>`
+      : `<div class="empty small">${editable ? 'Subí tu primera foto para empezar a comparar tu evolución.' : 'El alumno todavía no subió fotos.'}</div>`}
+  </div>`;
+}
+
+// Achica la foto en el navegador antes de subirla (más rápido con datos móviles)
+async function resizeImage(file, max = 1600) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch { if (/^image\/(jpeg|png|webp)$/.test(file.type)) return file; throw new Error('No se pudo leer la imagen. Probá con una foto JPG o PNG'); }
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((ok, fail) => c.toBlob((b) => (b ? ok(b) : fail(new Error('No se pudo procesar la imagen'))), 'image/jpeg', 0.85));
+}
+
+function bindPhotos() {
+  on('#photoform', 'submit', async (e) => {
+    const f = e.target, file = f.file.files[0];
+    if (!file) return;
+    const btn = $('button', f); btn.disabled = true; btn.textContent = 'Subiendo…';
+    try {
+      const blob = await resizeImage(file);
+      const q = new URLSearchParams({ date: f.date.value, pose: f.pose.value, notes: f.notes.value });
+      const res = await fetch('/api/photos?' + q, { method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudo subir la foto');
+      toast('Foto guardada 📸'); router();
+    } finally { btn.disabled = false; btn.textContent = 'Subir foto'; }
+  });
+  on('[data-delphoto]', 'click', async (e) => { if (confirm('¿Borrar esta foto?')) { await api('DELETE', `/photos/${e.target.dataset.delphoto}`); router(); } });
+}
+
+function progressView(progress, logs, editable, photos = []) {
   const pts = (k) => progress.filter((p) => p[k] != null).map((p) => ({ x: p.date, y: p[k] }));
-  return `
+  return `${photosView(photos, editable)}
     <div class="grid g2">
       <div class="card"><h2>Peso (kg)</h2>${lineChart(pts('weight_kg'), ' kg')}</div>
       <div class="card"><h2>Cintura (cm)</h2>${lineChart(pts('waist_cm'), ' cm')}</div>
@@ -317,7 +369,7 @@ function progressView(progress, logs, editable) {
 }
 
 route(/^\/progreso$/, async () => {
-  const [progress, logs] = await Promise.all([GET('/progress'), GET('/workouts')]);
+  const [progress, logs, photos] = await Promise.all([GET('/progress'), GET('/workouts'), GET('/photos')]);
   app.innerHTML = `<h1>Mi progreso</h1>
     <form id="f" class="card" style="margin-bottom:16px"><h2>Nuevo registro</h2>
       <div class="fields">
@@ -330,7 +382,8 @@ route(/^\/progreso$/, async () => {
       </div>
       <div class="field"><label>Notas</label><input name="notes"></div>
       <button class="primary">Guardar</button>
-    </form>${progressView(progress, logs, true)}`;
+    </form>${progressView(progress, logs, true, photos)}`;
+  bindPhotos();
   on('#f', 'submit', async (e) => { await POST('/progress', formData(e.target)); toast('Registro guardado'); router(); });
   on('[data-del]', 'click', async (e) => { if (confirm('¿Borrar este registro?')) { await api('DELETE', `/progress/${e.target.dataset.del}`); router(); } });
 }, { auth: true, paid: true });
@@ -351,28 +404,33 @@ route(/^\/mensajes$/, async () => {
 }, { auth: true, paid: true });
 
 route(/^\/perfil$/, async () => {
-  const u = me.user, pays = await GET('/payments');
+  const u = me.user, isT = u.role === 'trainer', pays = isT ? [] : await GET('/payments');
   app.innerHTML = `<h1>Mi perfil</h1><div class="grid g2">
-    <form id="f" class="card"><h2>Datos y objetivo</h2>
+    <form id="f" class="card"><h2>${isT ? 'Mis datos' : 'Datos y objetivo'}</h2>
       <div class="field"><label>Nombre</label><input name="name" value="${esc(u.name)}"></div>
       <div class="fields">
-        <div class="field"><label>Objetivo</label><select name="goal">${Object.entries(GOALS).map(([k, v]) => `<option value="${k}" ${u.goal === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        ${isT ? '' : `<div class="field"><label>Objetivo</label><select name="goal">${Object.entries(GOALS).map(([k, v]) => `<option value="${k}" ${u.goal === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
         <div class="field"><label>Peso objetivo (kg)</label><input name="target_weight_kg" type="number" step="0.1" value="${u.target_weight_kg ?? ''}"></div>
         <div class="field"><label>Altura (cm)</label><input name="height_cm" type="number" value="${u.height_cm ?? ''}"></div>
-        <div class="field"><label>Fecha de nacimiento</label><input name="birthdate" type="date" value="${esc(u.birthdate || '')}"></div>
-        <div class="field"><label>Teléfono</label><input name="phone" value="${esc(u.phone || '')}"></div>
+        <div class="field"><label>Fecha de nacimiento</label><input name="birthdate" type="date" value="${esc(u.birthdate || '')}"></div>`}
+        <div class="field"><label>Celular (con código de país)</label><input name="phone" type="tel" placeholder="54 9 11 1234 5678" value="${esc(u.phone || '')}"></div>
       </div>
-      <div class="field"><label>¿Qué querés lograr?</label><textarea name="goal_detail">${esc(u.goal_detail || '')}</textarea></div>
+      <fieldset class="notif"><legend>Avisos y recordatorios</legend>
+        <label class="check"><input type="checkbox" name="notify_email" ${u.notify_email ? 'checked' : ''}> Recibir avisos por email</label>
+        <label class="check"><input type="checkbox" name="notify_whatsapp" ${u.notify_whatsapp ? 'checked' : ''}> Acepto recibir avisos por WhatsApp</label>
+        <div class="muted small">${isT ? 'Te avisamos cuando un alumno te escribe.' : 'Te recordamos cuándo entrenar, cuándo cargar tu progreso, cuándo vence tu plan y cuando tu coach te escribe.'}</div>
+      </fieldset>
+      ${isT ? '' : `<div class="field"><label>¿Qué querés lograr?</label><textarea name="goal_detail">${esc(u.goal_detail || '')}</textarea></div>`}
       <div class="field"><label>Nueva contraseña (opcional)</label><input name="new_password" type="password" minlength="8" autocomplete="new-password"></div>
       <button class="primary">Guardar cambios</button>
     </form>
-    <div class="card"><h2>Suscripción</h2>
+    ${isT ? '' : `<div class="card"><h2>Suscripción</h2>
       ${me.subscription ? `<p>Plan <b>${esc(me.subscription.plan_name)}</b> ${subPill(me.subscription.expires_at)}<br><span class="muted small">Vence el ${fdate(me.subscription.expires_at)}</span></p>` : '<p class="muted">No tenés una suscripción activa.</p>'}
       <a class="btn primary" href="#/planes">${me.subscription ? 'Renovar / extender' : 'Suscribirme'}</a>
       <h3 style="margin-top:20px">Mis pagos</h3>
       ${pays.length ? `<div class="table-wrap"><table><tr><th>Fecha</th><th>Plan</th><th>Monto</th><th>Estado</th></tr>${pays.map((p) => `<tr><td>${fdate(p.created_at)}</td><td>${esc(p.plan_name)}</td>
         <td>${money(p.amount, p.currency)}</td><td>${payPill(p.status)}</td></tr>`).join('')}</table></div>` : '<div class="muted small">Sin pagos.</div>'}
-    </div></div>`;
+    </div>`}</div>`;
   on('#f', 'submit', async (e) => { await api('PUT', '/me', formData(e.target)); await refreshMe(); toast('Perfil actualizado'); });
 }, { auth: true });
 const payPill = (s) => `<span class="pill ${s === 'approved' ? 'ok' : s === 'pending' ? 'warn' : 'bad'}">${{ approved: 'Aprobado', pending: 'Pendiente', rejected: 'Rechazado' }[s]}</span>`;
@@ -492,8 +550,8 @@ route(/^\/alumnos\/(\d+)(?:\/(\w+))?$/, async (id, tab = 'resumen') => {
           <button>Registrar pago</button></div></form></div>
     </div>`;
   } else if (tab === 'progreso') {
-    const [progress, logs] = await Promise.all([GET(`/progress?student_id=${id}`), GET(`/workouts?student_id=${id}`)]);
-    body = progressView(progress, logs, false);
+    const [progress, logs, photos] = await Promise.all([GET(`/progress?student_id=${id}`), GET(`/workouts?student_id=${id}`), GET(`/photos?student_id=${id}`)]);
+    body = progressView(progress, logs, false, photos);
   } else {
     body = chatView(await GET(`/messages?student_id=${id}`));
   }
@@ -571,6 +629,59 @@ route(/^\/planes-admin$/, async () => {
   $$('form.plan-f').forEach((f) => f.addEventListener('submit', act(async (e) => {
     const d = formData(e.target); d.active = e.target.active.checked; await POST('/plans', d); toast('Plan guardado'); router();
   })));
+}, { auth: true, trainer: true });
+
+const KINDS = { expiring: 'Plan por vencer', expired: 'Plan vencido', inactive: 'Sin entrenar', checkin: 'Control de progreso', message: 'Mensaje nuevo', test: 'Prueba' };
+const NSTATUS = { sent: ['ok', 'Enviado'], simulated: ['warn', 'Simulado'], failed: ['bad', 'Falló'], pending: ['', 'Pendiente'] };
+
+route(/^\/recordatorios$/, async () => {
+  const r = await GET('/reminders'), s = r.settings;
+  const chk = (k, label) => `<label class="check"><input type="checkbox" name="${k}" ${s[k] === '1' ? 'checked' : ''}> ${label}</label>`;
+  const days = (k) => `<input name="${k}" type="number" min="1" max="90" value="${esc(s[k])}" class="days" aria-label="días">`;
+  const chan = (ok, name) => `<span class="pill ${ok ? 'ok' : 'warn'}">${name}: ${ok ? 'conectado' : 'simulado'}</span>`;
+  app.innerHTML = `<h1>Recordatorios automáticos</h1>
+    <p class="muted">La app revisa a tus alumnos cada media hora y les manda avisos por email y/o WhatsApp (solo a quienes lo aceptaron en su perfil), entre las ${esc(r.sending_hours.replace('-', ' y las '))} h. Cada aviso se manda una sola vez y, si la situación sigue, se repite como máximo una vez por semana.</p>
+    <div class="row" style="margin-bottom:16px">${chan(r.email_configured, 'Email')}${chan(r.whatsapp_configured, 'WhatsApp')}
+      <span class="pill">Aceptaron email: ${r.optins.email || 0}/${r.optins.total}</span><span class="pill">Aceptaron WhatsApp: ${r.optins.whatsapp || 0}/${r.optins.total}</span></div>
+    ${!r.email_configured || !r.whatsapp_configured ? '<p class="small muted">Los canales en modo <b>simulado</b> registran el aviso abajo pero no lo envían. Para activarlos configurá las variables SMTP_* y WA_* (ver README).</p>' : ''}
+    <div class="grid g2">
+      <form id="rs" class="card stack"><h2>Qué avisar</h2>
+        ${chk('reminders_enabled', '<b>Recordatorios activados</b>')}
+        <div class="row">${chk('remind_expiring', 'Plan por vencer')} <span class="muted small">— ${days('expiring_days')} días antes</span></div>
+        ${chk('remind_expired', 'Plan vencido (invitación a renovar)')}
+        <div class="row">${chk('remind_inactive', 'Alumno sin entrenar')} <span class="muted small">— después de ${days('inactive_days')} días</span></div>
+        <div class="row">${chk('remind_checkin', 'Cargar peso, medidas y fotos')} <span class="muted small">— cada ${days('checkin_days')} días</span></div>
+        ${chk('notify_messages', 'Mensaje nuevo en el chat (máx. 1 por hora)')}
+        <button class="primary">Guardar configuración</button>
+      </form>
+      <div class="card stack"><h2>Probar</h2>
+        <p class="muted small">Te manda un mensaje de prueba a vos (cargá tu email y celular en <a href="#/perfil">Mi cuenta</a>).</p>
+        <div class="row"><button data-test="email">Probar email</button><button data-test="whatsapp">Probar WhatsApp</button></div>
+        <h2 style="margin-top:12px">Enviar ahora</h2>
+        <p class="muted small">Revisa a todos los alumnos ya mismo, sin esperar al próximo ciclo ni respetar el horario.</p>
+        <div><button class="primary" id="run">Revisar y enviar ahora</button></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><h2>Historial de avisos</h2>
+      ${r.log.length ? `<div class="table-wrap"><table><tr><th>Fecha</th><th>Destinatario</th><th>Tipo</th><th>Canal</th><th>Estado</th><th>Mensaje</th></tr>
+      ${r.log.map((n) => `<tr><td class="small">${fdate(n.created_at)}</td><td>${esc(n.user_name)}</td><td>${esc(KINDS[n.kind] || n.kind)}</td>
+        <td style="white-space:nowrap">${n.channel === 'email' ? '✉️ Email' : '💬 WhatsApp'}</td><td><span class="pill ${NSTATUS[n.status]?.[0] || ''}">${NSTATUS[n.status]?.[1] || esc(n.status)}</span></td>
+        <td class="small muted">${esc((n.body || '').slice(0, 110))}${n.error ? `<div class="danger">${esc(n.error)}</div>` : ''}</td></tr>`).join('')}</table></div>`
+        : '<div class="empty">Todavía no se envió ningún aviso.</div>'}
+    </div>`;
+  on('#rs', 'submit', async (e) => {
+    const body = {};
+    $$('input', e.target).forEach((i) => { body[i.name] = i.type === 'checkbox' ? i.checked : i.value; });
+    await api('PUT', '/reminders/settings', body); toast('Configuración guardada');
+  });
+  on('[data-test]', 'click', async (e) => {
+    const r2 = await POST('/reminders/test', { channel: e.target.dataset.test });
+    toast(r2.status === 'sent' ? 'Mensaje de prueba enviado ✔' : 'Registrado en modo simulado (canal sin configurar)'); router();
+  });
+  on('#run', 'click', async () => {
+    const r2 = await POST('/reminders/run');
+    toast(r2.skipped ? r2.skipped : r2.sent ? `Se enviaron ${r2.sent} aviso${r2.sent === 1 ? '' : 's'}` : 'No había avisos pendientes'); router();
+  });
 }, { auth: true, trainer: true });
 
 function planForm(p) {

@@ -1,6 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { db, tx } = require('./db');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { db, tx, getSettings, saveSettings } = require('./db');
+const notifier = require('./notify');
 const { issueToken, clearToken, requireAuth, requireTrainer, requireSubscription, currentSubscription } = require('./auth');
 const payments = require('./payments');
 
@@ -54,8 +58,16 @@ api.get('/me', (req, res) => {
 api.put('/me', requireAuth, (req, res) => {
   const b = req.body;
   const goal = GOALS.includes(b.goal) ? b.goal : req.user.goal;
-  db.prepare(`UPDATE users SET name=COALESCE(?,name), goal=?, goal_detail=?, target_weight_kg=?, height_cm=?, birthdate=?, phone=? WHERE id=?`)
-    .run(str(b.name, 100), goal, str(b.goal_detail, 1000), num(b.target_weight_kg), num(b.height_cm), str(b.birthdate, 10), str(b.phone, 40), req.user.id);
+  const phone = str(b.phone, 40);
+  const wantsWa = b.notify_whatsapp === true || b.notify_whatsapp === 'on' || b.notify_whatsapp === '1';
+  if (wantsWa && String(phone || '').replace(/\D/g, '').length < 10) {
+    return bad(res, 'Para recibir avisos por WhatsApp cargá tu celular con código de país y área (ej. 54 9 11 1234 5678)');
+  }
+  const flag = (v) => (v === true || v === 'on' || v === '1' ? 1 : 0);
+  db.prepare(`UPDATE users SET name=COALESCE(?,name), goal=?, goal_detail=?, target_weight_kg=?, height_cm=?, birthdate=?, phone=?,
+    notify_email=?, notify_whatsapp=? WHERE id=?`)
+    .run(str(b.name, 100), goal, str(b.goal_detail, 1000), num(b.target_weight_kg), num(b.height_cm), str(b.birthdate, 10), phone,
+      flag(b.notify_email), flag(b.notify_whatsapp), req.user.id);
   if (b.new_password) {
     if (String(b.new_password).length < 8) return bad(res, 'La contraseña debe tener al menos 8 caracteres');
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(String(b.new_password), 10), req.user.id);
@@ -337,7 +349,96 @@ api.post('/messages', requireAuth, requireSubscription, (req, res) => {
   const body = str(req.body.body, 4000);
   if (!sid || !body) return bad(res, 'Mensaje vacío');
   db.prepare('INSERT INTO messages (student_id,sender_id,body) VALUES (?,?,?)').run(sid, req.user.id, body);
+  notifier.notifyNewMessage(req.user, sid, body);
   res.status(201).json({ ok: true });
 });
+
+/* ---------- Fotos de progreso ---------- */
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'data', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const POSES = ['frente', 'perfil', 'espalda'];
+
+// Detecta el formato por los primeros bytes (no se confía en el Content-Type)
+function imageType(buf) {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: '.jpg' };
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { mime: 'image/png', ext: '.png' };
+  if (buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return { mime: 'image/webp', ext: '.webp' };
+  return null;
+}
+
+api.get('/photos', requireAuth, requireSubscription, (req, res) => {
+  const sid = studentIdFor(req);
+  if (!sid) return bad(res, 'Indicá el alumno');
+  res.json(db.prepare('SELECT id,student_id,date,pose,notes,created_at FROM progress_photos WHERE student_id=? ORDER BY date, id').all(sid));
+});
+
+// El cuerpo es la imagen en binario; fecha, pose y nota van como parámetros de la URL
+api.post('/photos', requireAuth, requireSubscription, express.raw({ type: 'image/*', limit: '8mb' }), (req, res) => {
+  if (req.user.role !== 'student') return bad(res, 'Solo los alumnos suben fotos de progreso');
+  const buf = Buffer.isBuffer(req.body) ? req.body : null;
+  const type = buf && imageType(buf);
+  if (!type) return bad(res, 'Formato no soportado. Subí una foto JPG, PNG o WebP');
+  const count = db.prepare('SELECT COUNT(*) c FROM progress_photos WHERE student_id=?').get(req.user.id).c;
+  if (count >= 300) return bad(res, 'Alcanzaste el máximo de fotos. Borrá algunas antiguas');
+  const filename = crypto.randomUUID() + type.ext;
+  fs.writeFileSync(path.join(UPLOAD_DIR, filename), buf);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : new Date().toISOString().slice(0, 10);
+  const pose = POSES.includes(req.query.pose) ? req.query.pose : 'frente';
+  const id = Number(db.prepare('INSERT INTO progress_photos (student_id,date,pose,filename,mime,notes) VALUES (?,?,?,?,?,?)')
+    .run(req.user.id, date, pose, filename, type.mime, str(req.query.notes, 300)).lastInsertRowid);
+  res.status(201).json({ ok: true, id });
+});
+
+// Solo el alumno dueño y el entrenador pueden ver la foto
+api.get('/photos/:id/file', requireAuth, (req, res) => {
+  const p = db.prepare('SELECT * FROM progress_photos WHERE id=?').get(num(req.params.id));
+  if (!p || (req.user.role !== 'trainer' && p.student_id !== req.user.id)) return bad(res, 'Foto no encontrada', 404);
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+  res.sendFile(path.join(UPLOAD_DIR, path.basename(p.filename)), (err) => err && !res.headersSent && res.status(404).end());
+});
+
+api.delete('/photos/:id', requireAuth, (req, res) => {
+  const p = db.prepare('SELECT * FROM progress_photos WHERE id=? AND student_id=?').get(num(req.params.id), req.user.id);
+  if (!p) return bad(res, 'Foto no encontrada', 404);
+  db.prepare('DELETE FROM progress_photos WHERE id=?').run(p.id);
+  fs.rmSync(path.join(UPLOAD_DIR, path.basename(p.filename)), { force: true });
+  res.json({ ok: true });
+});
+
+/* ---------- Recordatorios (entrenador) ---------- */
+
+api.get('/reminders', requireAuth, requireTrainer, (_req, res) => {
+  res.json({
+    settings: getSettings(),
+    email_configured: notifier.emailConfigured(),
+    whatsapp_configured: notifier.waConfigured(),
+    in_sending_hours: notifier.inSendingHours(),
+    sending_hours: process.env.REMINDER_HOURS || '9-21',
+    optins: db.prepare(`SELECT SUM(notify_email) email, SUM(notify_whatsapp) whatsapp, COUNT(*) total FROM users WHERE role='student'`).get(),
+    log: db.prepare(`SELECT n.*, u.name AS user_name FROM notifications n JOIN users u ON u.id=n.user_id ORDER BY n.id DESC LIMIT 150`).all(),
+  });
+});
+
+api.put('/reminders/settings', requireAuth, requireTrainer, (req, res) => {
+  const b = req.body, out = {};
+  for (const k of ['reminders_enabled', 'remind_expiring', 'remind_expired', 'remind_inactive', 'remind_checkin', 'notify_messages']) out[k] = b[k] ? '1' : '0';
+  for (const k of ['expiring_days', 'inactive_days', 'checkin_days']) {
+    const v = num(b[k]);
+    if (v !== null) { if (v < 1 || v > 90) return bad(res, 'Los días deben estar entre 1 y 90'); out[k] = Math.round(v); }
+  }
+  saveSettings(out);
+  res.json({ ok: true });
+});
+
+api.post('/reminders/run', requireAuth, requireTrainer, wrap(async (_req, res) => {
+  res.json(await notifier.runReminders({ force: true }));
+}));
+
+api.post('/reminders/test', requireAuth, requireTrainer, wrap(async (req, res) => {
+  const status = await notifier.sendTest(req.user, req.body.channel === 'whatsapp' ? 'whatsapp' : 'email');
+  res.json({ ok: true, status });
+}));
 
 module.exports = api;

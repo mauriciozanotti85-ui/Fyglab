@@ -151,7 +151,64 @@ CREATE TABLE IF NOT EXISTS messages (
   read_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS progress_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL DEFAULT (date('now')),
+  pose TEXT NOT NULL DEFAULT 'frente',   -- frente | perfil | espalda
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Registro de recordatorios enviados. La restricción UNIQUE evita mandar dos veces el mismo aviso.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,          -- expiring | expired | inactive | checkin | message | test
+  ref_key TEXT NOT NULL,
+  channel TEXT NOT NULL,       -- email | whatsapp
+  status TEXT NOT NULL,        -- pending | sent | simulated | failed
+  error TEXT,
+  subject TEXT,
+  body TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (user_id, kind, ref_key, channel)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `);
+
+// Migraciones para bases creadas con versiones anteriores
+function addColumn(table, column, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+}
+addColumn('users', 'notify_email', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('users', 'notify_whatsapp', 'INTEGER NOT NULL DEFAULT 0');
+
+const DEFAULT_SETTINGS = {
+  reminders_enabled: '1',
+  remind_expiring: '1', expiring_days: '3',
+  remind_expired: '1',
+  remind_inactive: '1', inactive_days: '4',
+  remind_checkin: '1', checkin_days: '14',
+  notify_messages: '1',
+};
+function getSettings() {
+  const s = { ...DEFAULT_SETTINGS };
+  for (const r of db.prepare('SELECT key, value FROM settings').all()) s[r.key] = r.value;
+  return s;
+}
+function saveSettings(obj) {
+  const st = db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  for (const k of Object.keys(DEFAULT_SETTINGS)) if (k in obj) st.run(k, String(obj[k]));
+}
 
 function tx(fn) {
   db.exec('BEGIN');
@@ -225,4 +282,4 @@ function seed() {
   console.log('Base de datos inicializada con datos de ejemplo.');
 }
 
-module.exports = { db, tx, seed };
+module.exports = { db, tx, seed, getSettings, saveSettings };

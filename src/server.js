@@ -39,6 +39,7 @@ if (require.main === module) {
   }
   const port = Number(process.env.PORT) || 3000;
   createApp().listen(port, () => console.log(`FitCoach escuchando en http://localhost:${port}`));
+  if (process.env.REMINDERS_SCHEDULER !== 'off') require('./notify').startScheduler();
 }
 
 module.exports = { createApp };
