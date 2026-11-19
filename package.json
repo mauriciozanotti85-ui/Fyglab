@@ -1,0 +1,22 @@
+{
+  "name": "fitcoach",
+  "version": "1.0.0",
+  "description": "App paga para entrenadores físicos: rutinas, ejercicios, consejos y seguimiento de alumnos suscriptos",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --no-warnings src/server.js",
+    "dev": "node --no-warnings --watch src/server.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "jsonwebtoken": "^9.0.3"
+  }
+}
