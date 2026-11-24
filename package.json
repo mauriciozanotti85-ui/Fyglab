@@ -1,5 +1,5 @@
 {
-  "name": "fitcoach",
+  "name": "fyglab",
   "version": "1.0.0",
   "description": "App paga para entrenadores físicos: rutinas, ejercicios, consejos y seguimiento de alumnos suscriptos",
   "main": "src/server.js",

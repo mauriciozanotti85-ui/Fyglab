@@ -38,7 +38,7 @@ if (require.main === module) {
     console.error('Falta JWT_SECRET en producción'); process.exit(1);
   }
   const port = Number(process.env.PORT) || 3000;
-  createApp().listen(port, () => console.log(`FitCoach escuchando en http://localhost:${port}`));
+  createApp().listen(port, () => console.log(`Fyglab escuchando en http://localhost:${port}`));
   if (process.env.REMINDERS_SCHEDULER !== 'off') require('./notify').startScheduler();
 }
 

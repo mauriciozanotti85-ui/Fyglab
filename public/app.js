@@ -1,4 +1,4 @@
-/* FitCoach – SPA sin dependencias */
+/* Fyglab – SPA sin dependencias */
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);

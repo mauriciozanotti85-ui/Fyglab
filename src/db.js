@@ -4,7 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'fitcoach.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'fyglab.db');
 if (DB_PATH !== ':memory:') fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
@@ -221,7 +221,7 @@ function seed() {
   if (count > 0) return;
 
   tx(() => {
-    const trainerEmail = process.env.TRAINER_EMAIL || 'coach@fitcoach.app';
+    const trainerEmail = process.env.TRAINER_EMAIL || 'coach@fyglab.app';
     const trainerPass = process.env.TRAINER_PASSWORD || 'coach1234';
     db.prepare(`INSERT INTO users (name,email,password_hash,role) VALUES (?,?,?, 'trainer')`)
       .run(process.env.TRAINER_NAME || 'Coach', trainerEmail, bcrypt.hashSync(trainerPass, 10));

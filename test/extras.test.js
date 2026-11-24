@@ -2,7 +2,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 process.env.DB_PATH = ':memory:';
-process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fitcoach-up-'));
+process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fyglab-up-'));
 for (const k of ['MP_ACCESS_TOKEN', 'SMTP_HOST', 'WA_TOKEN', 'WA_PHONE_NUMBER_ID']) delete process.env[k];
 
 const { test, before, after } = require('node:test');
@@ -39,7 +39,7 @@ test('fotos de progreso: subida, permisos y borrado', async () => {
   const a = await subscribedStudent('leo@test.com');
   const b = await subscribedStudent('otro@test.com');
   const coach = client();
-  await coach('POST', '/auth/login', { email: 'coach@fitcoach.app', password: 'coach1234' });
+  await coach('POST', '/auth/login', { email: 'coach@fyglab.app', password: 'coach1234' });
 
   assert.equal((await a('POST', '/photos?pose=perfil&date=2026-11-01', Buffer.from('no es imagen'), 'image/jpeg')).status, 400);
   const up = await a('POST', '/photos?pose=perfil&date=2026-11-01', JPEG, 'image/jpeg');
@@ -91,7 +91,7 @@ test('recordatorios: envía una sola vez por canal y respeta preferencias', asyn
 
   // Configuración del coach y aviso de mensaje nuevo
   const coach = client();
-  await coach('POST', '/auth/login', { email: 'coach@fitcoach.app', password: 'coach1234' });
+  await coach('POST', '/auth/login', { email: 'coach@fyglab.app', password: 'coach1234' });
   assert.equal((await s('GET', '/reminders')).status, 403);
   await s('PUT', '/me', { name: 'Rem', notify_email: 'on' });
   await coach('POST', '/messages', { student_id: u.id, body: 'Buen trabajo esta semana' });

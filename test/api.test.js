@@ -40,7 +40,7 @@ test('flujo completo alumno + entrenador', async () => {
   assert.equal(Math.round(diff), 30);
 
   assert.equal((await alu('GET', '/dashboard')).status, 403);
-  assert.equal((await coach('POST', '/auth/login', { email: 'coach@fitcoach.app', password: 'coach1234' })).status, 200);
+  assert.equal((await coach('POST', '/auth/login', { email: 'coach@fyglab.app', password: 'coach1234' })).status, 200);
   const students = (await coach('GET', '/students')).body;
   const ana = students.find((s) => s.email === 'ana@test.com');
   const routines = (await coach('GET', '/routines')).body;

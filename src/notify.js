@@ -182,7 +182,7 @@ function notifyNewMessage(sender, studentId, body) {
 }
 
 async function sendTest(user, channel) {
-  const msg = { subject: 'Prueba de FitCoach', text: 'Si recibiste este mensaje, los avisos están bien configurados. ✅' };
+  const msg = { subject: 'Prueba de Fyglab', text: 'Si recibiste este mensaje, los avisos están bien configurados. ✅' };
   if (channel === 'whatsapp') {
     if (!waPhone(user)) throw new Error('Cargá tu teléfono en el perfil (con código de país, ej. 5491112345678)');
     const tpl = process.env.WA_TEMPLATE_TEST || 'hello_world';

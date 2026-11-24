@@ -1,4 +1,4 @@
-# FitCoach
+# Fyglab
 
 App web paga para que un entrenador físico guíe a sus alumnos suscriptos: rutinas, biblioteca de ejercicios con videos, consejos, chat y seguimiento del progreso hacia el objetivo de cada alumno. Funciona en el celular y se puede instalar como app (PWA).
 
@@ -34,7 +34,7 @@ npm install
 npm start
 ```
 
-Abrí http://localhost:3000. Entrenador de ejemplo: `coach@fitcoach.app` / `coach1234` (se cambia con las variables `TRAINER_*` antes del primer arranque o desde *Perfil*).
+Abrí http://localhost:3000. Entrenador de ejemplo: `coach@fyglab.app` / `coach1234` (se cambia con las variables `TRAINER_*` antes del primer arranque o desde *Perfil*).
 
 Tests:
 
