@@ -116,3 +116,7 @@ label.check { display: flex; align-items: center; gap: 8px; color: var(--text); 
 label.check input { width: auto; }
 input.days { width: 64px; padding: 4px 6px; display: inline-block; }
 div.danger { color: var(--danger); }
+
+/* Acceso rápido en la versión de demostración */
+.demo-box { margin-top: 16px; padding: 12px; border: 1px dashed var(--accent); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.demo-box > b, .demo-box > div { flex-basis: 100%; }

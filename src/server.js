@@ -18,6 +18,7 @@ const api = require('./api');
 
 function createApp() {
   seed();
+  if (process.env.DEMO_DATA === '1') require('./demo').seedDemo();
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '200kb' }));

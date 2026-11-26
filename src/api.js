@@ -52,6 +52,8 @@ api.get('/me', (req, res) => {
     user: req.user || null,
     subscription: req.user?.role === 'student' ? currentSubscription(req.user.id) : null,
     demo_payments: payments.isDemo(),
+    // Solo en modo demostración: cuentas de prueba para entrar con un clic
+    demo_accounts: process.env.DEMO_DATA === '1' ? require('./demo').DEMO_ACCOUNTS : null,
   });
 });
 

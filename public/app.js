@@ -133,7 +133,7 @@ route(/^\/$/, async () => {
     <section class="hero">
       <h1>Tu entrenador, en tu bolsillo</h1>
       <p>Rutinas personalizadas según tu objetivo, videos de cada ejercicio, consejos y seguimiento real de tu progreso. Con contacto directo con tu coach.</p>
-      <div class="row" style="justify-content:center"><a class="btn primary" href="#/registro">Empezar ahora</a><a class="btn" href="#/login">Ya tengo cuenta</a></div>
+      <div class="row" style="justify-content:center"><a class="btn primary" href="#/registro">Empezar ahora</a><a class="btn" href="#/login">${me.demo_accounts ? 'Probar la demo' : 'Ya tengo cuenta'}</a></div>
     </section>
     <div class="grid g4" style="margin-bottom:28px">
       ${[['🎯', 'Objetivos claros', 'Bajar de peso, ganar músculo, resistencia o salud.'], ['📋', 'Rutina a medida', 'Tu coach arma y ajusta tu plan.'],
@@ -149,8 +149,12 @@ route(/^\/login$/, () => {
     <form id="f"><div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
     <div class="field"><label>Contraseña</label><input name="password" type="password" required autocomplete="current-password"></div>
     <button class="primary" style="width:100%">Ingresar</button></form>
-    <p class="muted small">¿No tenés cuenta? <a href="#/registro">Registrate</a></p></div>`;
-  on('#f', 'submit', async (e) => { await POST('/auth/login', formData(e.target)); await refreshMe(); location.hash = home(); });
+    <p class="muted small">¿No tenés cuenta? <a href="#/registro">Registrate</a></p>
+    ${me.demo_accounts ? `<div class="demo-box"><b>Versión de demostración</b><div class="muted small">Entrá con una cuenta de prueba:</div>
+      ${me.demo_accounts.map((a, i) => `<button type="button" class="sm" data-demo="${i}">${esc(a.label)}</button>`).join('')}</div>` : ''}</div>`;
+  const login = async (body) => { await POST('/auth/login', body); await refreshMe(); location.hash = home(); };
+  on('#f', 'submit', (e) => login(formData(e.target)));
+  on('[data-demo]', 'click', (e) => { const a = me.demo_accounts[e.target.dataset.demo]; return login({ email: a.email, password: a.password }); });
 });
 
 route(/^\/registro$/, () => {

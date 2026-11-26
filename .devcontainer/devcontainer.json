@@ -1,0 +1,21 @@
+{
+  "name": "Fyglab (demostración)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "containerEnv": {
+    "DEMO_DATA": "1"
+  },
+  "postCreateCommand": "npm ci",
+  "postAttachCommand": {
+    "fyglab": "npm start"
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Fyglab",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "hostRequirements": {
+    "cpus": 2
+  }
+}

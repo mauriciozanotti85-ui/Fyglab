@@ -42,6 +42,17 @@ Tests:
 npm test
 ```
 
+## Demostración gratis en GitHub Codespaces
+
+Sirve para mostrar la app sin servidor ni tarjeta de crédito (usa las horas gratis de Codespaces de tu cuenta de GitHub).
+
+1. En el repositorio: **Code → Codespaces → Create codespace on main**.
+2. Esperá unos minutos: se instala todo y la app arranca sola con datos de ejemplo (alumnos, rutinas, progreso, mensajes y pagos).
+3. Abrí la pestaña **Ports**, hacé clic derecho en el puerto **3000 (Fyglab) → Port Visibility → Public** y copiá la dirección (ícono del globo / "Copy Local Address"). Ese link se puede abrir desde cualquier celular.
+4. En la pantalla de ingreso hay botones para entrar como **Entrenador**, **Alumna** o **Alumno** con un clic.
+
+El Codespace se apaga solo tras 30 minutos sin uso; para volver a mostrarla, abrilo de nuevo desde **Code → Codespaces**. Los datos quedan guardados mientras no borres el Codespace. Para correr la demo en tu computadora: `DEMO_DATA=1 npm start`.
+
 ## Cobrar con Mercado Pago
 
 Sin `MP_ACCESS_TOKEN` la app funciona en **modo demo** (el pago se aprueba con un botón). Para cobrar de verdad:
